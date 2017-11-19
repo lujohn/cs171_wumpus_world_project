@@ -198,18 +198,13 @@ class MyAI ( Agent ):
         print('Frontier: %s\n' % self.exploreFrontier)
 
     def handleDanger(self, danger):
-        ### For now, naively go home for stench ###
-        if danger == 'stench':
+        ## Implement EVALUATE DANGER ##
+        # Go to next node in Frontier
+        nextSq = self.popFrontier()
+        if not nextSq:
             self.goHome(climb = True)
-            return
-
-        if danger == 'breeze':
-            # Go to next node in Frontier
-            nextSq = self.popFrontier()
-            if not nextSq:
-                self.goHome(climb = True)
-            else:
-                self.goToSquare(nextSq)
+        else:
+            self.goToSquare(nextSq)
 
 
     # This function constructs a path from the current square to (1,1)
