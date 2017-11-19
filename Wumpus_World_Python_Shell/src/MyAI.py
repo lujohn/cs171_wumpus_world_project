@@ -35,7 +35,6 @@ class MyAI ( Agent ):
         # ======================================================================
         
         # -------------------------  State Information ---------------------------
-        self.firstTurn = True
         self.wumpusKilled = False
         self.headingHome = False
         self.currentSq = (1,1)
@@ -46,17 +45,24 @@ class MyAI ( Agent ):
         self.xDim = -1
         self.yDim = -1
 
+        # Buffers the immediate next moves to take. These have 
+        # top priority.
         self.moveBuffer = list()
+
+        # Stores the path taken from (1,1) to current node. 
+        # Treat as LIFO stack
         self.pathHistory = list()
 
         # Matricies are all 10 x 10 grid with entries initialized to False
         self.breezeMat = [[False for x in range(10)] for y in range(10)]
         self.stenchMat = [[False for x in range(10)] for y in range(10)]
-        self.safeMat = [[False for x in range(10)] for y in range(10)]
+        # self.safeMat = [[False for x in range(10)] for y in range(10)]
 
         # Exploration Frontier (LIFO structure)
         self.exploreFrontier = []
-        self.exploredMat = []
+
+        # Tracks the squares that have been visited (stores (x,y) tuples)
+        self.exploredSquares = []
 
         # Debugging
         self.headingToSquare = ()
@@ -70,7 +76,9 @@ class MyAI ( Agent ):
         # YOUR CODE BEGINS
         # ======================================================================
         print('facing: (beg. of turn) %s' % self.facing)
-        print('Move Buffer (beg. of turn: %s' % (self.moveBuffer) )
+        print('Explored: (beg. of turn: %s' % self.exploredSquares)
+        print('Path History: (beg. of turn: %s' % self.pathHistory)
+        print('Frontier (beg. of turn: %s' % self.exploreFrontier)
         # Moves in the moveBuffer have top priority
         if len(self.moveBuffer) != 0:
             return self.moveBuffer.pop(0)
@@ -97,7 +105,7 @@ class MyAI ( Agent ):
             if len(self.exploreFrontier) == 0:
                 self.goHome(climb = True)
             else:
-                self.goToSquare(self.exploreFrontier.pop())
+                self.goToSquare(self.popFrontier())
 
             return self.moveBuffer.pop(0)
         else:
@@ -122,12 +130,14 @@ class MyAI ( Agent ):
                     self.goHome(climb = True)
                     return self.moveBuffer.pop(0)
                 else:
-                    nextSq = self.exploreFrontier.pop()
+                    nextSq = self.popFrontier()
                     self.goToSquare(nextSq)
                     # update AI's current location
                     self.currentSq = nextSq
                     return self.moveBuffer.pop(0)
 
+
+        # ##### should never reach here ####
         return Agent.Action.CLIMB
         # ======================================================================
         # YOUR CODE ENDS
@@ -136,6 +146,11 @@ class MyAI ( Agent ):
     # ======================================================================
     # YOUR CODE BEGINS
     # ======================================================================
+    def popFrontier(self):
+        nextSq = self.exploreFrontier.pop()
+        print('Popped %s from frontier\n' % (nextSq, ))
+        return nextSq
+
     # def takeMoveFromBuffer(self, move):
     #     if move ==
 
@@ -146,9 +161,14 @@ class MyAI ( Agent ):
         self.headingToSquare = dest
 
         # Backtrack to a square that is adjacent to the destination
+        prevNode = None
         while not self.isAdjacent(dest):
-            self.moveOneSq(self.pathHistory.pop(0))
+            prevNode = self.pathHistory.pop()
+            self.moveOneSq(prevNode)
 
+        # add back in the last popped node from history to keep it in the path
+        if prevNode:
+            self.pathHistory.append(prevNode)
         # make the move to the destination
         self.moveOneSq(dest)
 
@@ -158,7 +178,6 @@ class MyAI ( Agent ):
     def isAdjacent(self, dest):
         (curX, curY) = self.currentSq
         (destX, destY) = dest
-        print("currentSq: %s destSq %s" % ((self.currentSq, ), (dest, )))
         return (abs(destX - curX) + abs(destY - curY)) == 1
 
     def addNeighborsToFrontier(self):
@@ -167,12 +186,12 @@ class MyAI ( Agent ):
         ### Modify - for now, only add the forward the left neighbors to frontier ###
         if curY != self.yDim:
             nextSq = (curX, curY + 1)
-            if nextSq not in self.pathHistory and nextSq not in self.exploreFrontier:
+            if nextSq not in self.exploredSquares and nextSq not in self.exploreFrontier:
                 self.exploreFrontier.append(nextSq)
                 print('Adding %s to frontier' % (nextSq, ))
         if curX != self.xDim:
             nextSq = (curX + 1, curY)
-            if nextSq not in self.pathHistory and nextSq not in self.exploreFrontier:
+            if nextSq not in self.exploredSquares and nextSq not in self.exploreFrontier:
                 self.exploreFrontier.append(nextSq)
                 print('Adding %s to frontier' % (nextSq, ))
 
@@ -186,7 +205,6 @@ class MyAI ( Agent ):
     # This function constructs a path from the current square to (1,1)
     def goHome(self, climb):
         print('Heading Home (inside goHome)!\n')
-        print('Path History (inside goHome): \n')
         print(self.pathHistory)
         # Construct path to go back to (1,1)
         while len(self.pathHistory) != 0:
@@ -194,8 +212,6 @@ class MyAI ( Agent ):
 
         if climb:
             self.moveBuffer.append(Agent.Action.CLIMB)
-
-        print('Move Buffer (inside goHome()): %s\n' % (self.moveBuffer))
     
     # This function makes a move to an adjacent square. It handles orienting
     # the agent in the right direction and moves the agent to the destination 
@@ -210,8 +226,7 @@ class MyAI ( Agent ):
         (destX, destY) = dest
 
         (dx, dy) = (destX - curX, destY - curY)
-        print('(insdie moveOneSq()) dest: %s curSq: %s' % ((dest, ), (self.currentSq, )))
-        print('(dx, dy) is %d, %d and agent is facing: %s' % (dx, dy, self.facing))
+        print('dest: %s curSq: %s (inside moveOneSq()) ' % ((dest, ), (self.currentSq, )))
         # Want to move horizontally        
         if dx != 0:
             # want to go left
@@ -260,7 +275,11 @@ class MyAI ( Agent ):
         # move forward
         self.moveBuffer.append(Agent.Action.FORWARD)
 
-        # update current square
+        # Mark current square as explored
+        if self.currentSq not in self.exploredSquares:
+            self.exploredSquares.append(self.currentSq)
+
+        # update current square to destination square
         self.currentSq = dest
 
     def makeUTurn(self):
