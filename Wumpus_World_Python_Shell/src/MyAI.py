@@ -147,6 +147,9 @@ class MyAI ( Agent ):
     # YOUR CODE BEGINS
     # ======================================================================
     def popFrontier(self):
+        if len(self.exploreFrontier) == 0:
+            return None
+
         nextSq = self.exploreFrontier.pop()
         print('Popped %s from frontier\n' % (nextSq, ))
         return nextSq
@@ -155,20 +158,17 @@ class MyAI ( Agent ):
     #     if move ==
 
     def goToSquare(self, dest):
-        (curX, curY) = self.currentSq
 
-        # DEBUGGING
-        self.headingToSquare = dest
+        if self.currentSq == dest:
+            return 
 
         # Backtrack to a square that is adjacent to the destination
-        prevNode = None
         while not self.isAdjacent(dest):
             prevNode = self.pathHistory.pop()
             self.moveOneSq(prevNode)
 
-        # add back in the last popped node from history to keep it in the path
-        if prevNode:
-            self.pathHistory.append(prevNode)
+        self.pathHistory.append(self.currentSq)
+
         # make the move to the destination
         self.moveOneSq(dest)
 
@@ -198,8 +198,18 @@ class MyAI ( Agent ):
         print('Frontier: %s\n' % self.exploreFrontier)
 
     def handleDanger(self, danger):
-        ### For now, naively go home ###
-        self.goHome(climb = True)
+        ### For now, naively go home for stench ###
+        if danger == 'stench':
+            self.goHome(climb = True)
+            return
+
+        if danger == 'breeze':
+            # Go to next node in Frontier
+            nextSq = self.popFrontier()
+            if not nextSq:
+                self.goHome(climb = True)
+            else:
+                self.goToSquare(nextSq)
 
 
     # This function constructs a path from the current square to (1,1)
@@ -207,8 +217,9 @@ class MyAI ( Agent ):
         print('Heading Home (inside goHome)!\n')
         print(self.pathHistory)
         # Construct path to go back to (1,1)
-        while len(self.pathHistory) != 0:
-            self.moveOneSq(self.pathHistory.pop())
+        # while len(self.pathHistory) != 0:
+        #     self.moveOneSq(self.pathHistory.pop())
+        self.goToSquare((1,1))
 
         if climb:
             self.moveBuffer.append(Agent.Action.CLIMB)
