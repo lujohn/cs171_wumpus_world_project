@@ -55,9 +55,13 @@ class MyAI ( Agent ):
         self.pathHistory = list()
 
         # Matricies are all 10 x 10 grid with entries initialized to False
-        self.breezeMat = [[False for x in range(10)] for y in range(10)]
-        self.stenchMat = [[False for x in range(10)] for y in range(10)]
+        # self.breezeMat = [[False for x in range(10)] for y in range(10)]
+        # self.stenchMat = [[False for x in range(10)] for y in range(10)]
         # self.safeMat = [[False for x in range(10)] for y in range(10)]
+        self.breezeSq = []
+        self.stenchSq = []
+        self.safeSq = []
+
 
         # Exploration Frontier (LIFO structure)
         self.exploreFrontier = []
@@ -77,6 +81,8 @@ class MyAI ( Agent ):
         # YOUR CODE BEGINS
         # ======================================================================
         print('facing: (beg. of turn) %s' % self.facing)
+        print('Stench Sq found: %s' % self.stenchSq)
+        print('Breeze Sq found: %s' % self.breezeSq)
         print('Explored: (beg. of turn: %s' % self.exploredSquares)
         print('Path History: (beg. of turn: %s' % self.pathHistory)
         print('Frontier (beg. of turn: %s' % self.exploreFrontier)
@@ -92,6 +98,8 @@ class MyAI ( Agent ):
         if scream:
             self.wumpusDead = True
             print('Wumpus is Dead!')
+            # Append the square that wumpus was on to frontier
+            self.addNeighborsToFrontier()
 
 
         (curX, curY) = self.currentSq 
@@ -118,11 +126,15 @@ class MyAI ( Agent ):
             dangers = []
             # If a stench or breeze is perceived, mark the squares.
             if stench and not self.wumpusDead:
-                self.stenchMat[curX-1][curY-1] = True
+                #self.stenchMat[curX-1][curY-1] = True
+                if self.currentSq not in self.stenchSq:
+                    self.stenchSq.append(self.currentSq)
                 dangers.append('stench')
             
             if breeze:
-                self.breezeMat[curX-1][curY-1] = True
+                #self.breezeMat[curX-1][curY-1] = True
+                if self.currentSq not in self.breezeSq:
+                    self.breezeSq.append(self.currentSq)
                 dangers.append('breeze')
 
             if len(dangers) != 0:
@@ -173,16 +185,31 @@ class MyAI ( Agent ):
         ### Naively shoot the arrow forward.
         if 'stench' in dangers:
             if self.haveArrow:
-                self.moveBuffer.append(Agent.Action.SHOOT)
-                self.haveArrow = False
-                return
+                wumpusSq = self.findWumpusSquare()
+                if wumpusSq:
+                    # Face Wumpus and Shoot
+                    self.faceSquare(wumpusSq)
+                    self.moveBuffer.append(Agent.Action.SHOOT)
+                    self.haveArrow = False
+                    return
+
+                else:
+                    # cannot infer wumpus location
+                    # be conservative.
+                    nextSq = self.popFrontier()
+                    if not nextSq:
+
+                        ##### Can shoot arrow here! ####
+                        self.goHome(climb = True)
+                    else:
+                        self.goToSquare(nextSq)
             else:
+                # No arrow left
                 nextSq = self.popFrontier()
                 if not nextSq:
                     self.goHome(climb = True)
                 else:
                     self.goToSquare(nextSq)
-
 
         if 'breeze' in dangers:
             nextSq = self.popFrontier()
@@ -191,6 +218,102 @@ class MyAI ( Agent ):
             else:
                 self.goToSquare(nextSq)
 
+    def faceSquare(self, dest):
+        (curX, curY) = self.currentSq
+        (destX, destY) = dest
+
+        (dx, dy) = (destX - curX, destY - curY)      
+        if dx != 0:
+            # want to go left
+            if dx < 0 and self.facing != 'left':
+                if self.facing == 'right':
+                    # Make a u-turn
+                    self.makeUTurn() 
+                elif self.facing == 'up':
+                    self.moveBuffer.append(Agent.Action.TURN_LEFT)
+                elif self.facing == 'down':
+                    self.moveBuffer.append(Agent.Action.TURN_RIGHT)
+                self.facing = 'left'
+            # want to go right (dx > 0)
+            elif dx > 0 and self.facing != 'right':
+                if self.facing == 'left':
+                    # Make a u-turn
+                    self.makeUTurn() 
+                elif self.facing == 'up':
+                    self.moveBuffer.append(Agent.Action.TURN_RIGHT)
+                elif self.facing =='down':
+                    self.moveBuffer.append(Agent.Action.TURN_LEFT)
+                self.facing = 'right'
+        # want to move vertically
+        elif dy != 0:
+            # want to move up
+            if dy > 0 and self.facing != 'up':
+                if self.facing == 'down':
+                    # Make a u-turn
+                    self.makeUTurn() 
+                elif self.facing == 'left':
+                    self.moveBuffer.append(Agent.Action.TURN_RIGHT)
+                elif self.facing == 'right':
+                    self.moveBuffer.append(Agent.Action.TURN_LEFT)
+                self.facing = 'up'
+            # want to move down
+            if dy < 0 and self.facing != 'down':
+                if self.facing == 'up':
+                    # Make a u-turn
+                    self.makeUTurn() 
+                elif self.facing == 'left':
+                    self.moveBuffer.append(Agent.Action.TURN_LEFT)
+                elif self.facing =='right':
+                    self.moveBuffer.append(Agent.Action.TURN_RIGHT)
+                self.facing = 'down'
+
+    def findWumpusSquare(self):
+        x, y = self.currentSq
+        # Consult the stench matrix for more information
+        wumpusSq = None
+        upRight = (x + 1, y + 1)
+        downRight = (x + 1, y - 1)
+        upLeft = (x - 1, y + 1)
+        downLeft = (x - 1, y - 1)
+        up = (x, y + 1)
+        down = (x, y - 1)
+        left = (x - 1, y)
+        right = (x + 1, y)
+        # Case 1: If there is a stench 2 squares away horizontally or vertically
+        # then Wumpus is definitely in between.
+        if (x + 2, y) in self.stenchSq:
+            wumpusSq = right
+        elif (x - 2, y) in self.stenchSq:
+            wumpusSq = left
+        elif (x, y + 2) in self.stenchSq:
+            wumpusSq = up
+        elif (x, y - 2) in self.stenchSq:
+            wumpusSq = down
+        else:
+            # Case 2: If an adjacent diagonal has a stench and corresponding
+            # adjacent square has been explored 
+            if upRight in self.stenchSq:
+                if up in self.exploredSquares:
+                    wumpusSq = right
+                elif right in self.exploredSquares:
+                    wumpusSq = up
+            elif downRight in self.stenchSq:
+                if down in self.exploredSquares:
+                    wumpusSq = right
+                elif right in self.exploredSquares:
+                    wumpusSq = down
+            elif upLeft in self.stenchSq:
+                if up in self.exploredSquares:
+                    wumpusSq = left
+                elif left in self.exploredSquares:
+                    wumpusSq = up
+            elif downLeft in self.stenchSq:
+                if down in self.stenchSq:
+                    wumpusSq = left
+                elif left in self.stenchSq:
+                    wumpusSq = down
+
+        return wumpusSq
 
     def popFrontier(self):
         if len(self.exploreFrontier) == 0:
