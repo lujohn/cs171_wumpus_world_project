@@ -35,8 +35,9 @@ class MyAI ( Agent ):
         # ======================================================================
         
         # -------------------------  State Information ---------------------------
-        self.wumpusKilled = False
+        self.wumpusDead = False
         self.headingHome = False
+        self.haveArrow = True
         self.currentSq = (1,1)
         self.prevPercept = []
 
@@ -88,6 +89,11 @@ class MyAI ( Agent ):
             self.goHome(True)
             return Agent.Action.GRAB
 
+        if scream:
+            self.wumpusDead = True
+            print('Wumpus is Dead!')
+
+
         (curX, curY) = self.currentSq 
 
         if bump:
@@ -109,32 +115,37 @@ class MyAI ( Agent ):
 
             return self.moveBuffer.pop(0)
         else:
+            dangers = []
             # If a stench or breeze is perceived, mark the squares.
-            if stench:
+            if stench and not self.wumpusDead:
                 self.stenchMat[curX-1][curY-1] = True
-                self.handleDanger(danger = 'stench')
-                return self.moveBuffer.pop(0)
-            elif breeze:
+                dangers.append('stench')
+            
+            if breeze:
                 self.breezeMat[curX-1][curY-1] = True
-                self.handleDanger(danger = 'breeze')
+                dangers.append('breeze')
+
+            if len(dangers) != 0:
+                self.handleDanger(dangers)
                 return self.moveBuffer.pop(0)
-            else: 
-                # append current square to pathHistory
-                self.pathHistory.append(self.currentSq)
+            
+            # ------------- No Dangers Present -------------
+            # append current square to pathHistory
+            self.pathHistory.append(self.currentSq)
 
-                ####### update frontier ######
-                self.addNeighborsToFrontier()
+            ####### update frontier ######
+            self.addNeighborsToFrontier()
 
-                # Get next destination
-                if len(self.exploreFrontier) == 0:
-                    self.goHome(climb = True)
-                    return self.moveBuffer.pop(0)
-                else:
-                    nextSq = self.popFrontier()
-                    self.goToSquare(nextSq)
-                    # update AI's current location
-                    self.currentSq = nextSq
-                    return self.moveBuffer.pop(0)
+            # Get next destination
+            if len(self.exploreFrontier) == 0:
+                self.goHome(climb = True)
+                return self.moveBuffer.pop(0)
+            else:
+                nextSq = self.popFrontier()
+                self.goToSquare(nextSq)
+                # update AI's current location
+                self.currentSq = nextSq
+                return self.moveBuffer.pop(0)
 
 
         # ##### should never reach here ####
@@ -146,6 +157,41 @@ class MyAI ( Agent ):
     # ======================================================================
     # YOUR CODE BEGINS
     # ======================================================================
+    def handleDanger(self, dangers):
+        ## Implement EVALUATE DANGER ##
+
+        #### For now, do not handle both cases
+        if 'breeze' in dangers and 'stench' in dangers:
+            nextSq = self.popFrontier()
+            if not nextSq:
+                self.goHome(climb = True)
+            else:
+                self.goToSquare(nextSq)  
+            return        
+
+        # Note: stench will be in dangers list only if wumpus is not dead
+        ### Naively shoot the arrow forward.
+        if 'stench' in dangers:
+            if self.haveArrow:
+                self.moveBuffer.append(Agent.Action.SHOOT)
+                self.haveArrow = False
+                return
+            else:
+                nextSq = self.popFrontier()
+                if not nextSq:
+                    self.goHome(climb = True)
+                else:
+                    self.goToSquare(nextSq)
+
+
+        if 'breeze' in dangers:
+            nextSq = self.popFrontier()
+            if not nextSq:
+                self.goHome(climb = True)
+            else:
+                self.goToSquare(nextSq)
+
+
     def popFrontier(self):
         if len(self.exploreFrontier) == 0:
             return None
@@ -197,15 +243,6 @@ class MyAI ( Agent ):
 
         print('Frontier: %s\n' % self.exploreFrontier)
 
-    def handleDanger(self, danger):
-        ## Implement EVALUATE DANGER ##
-        # Go to next node in Frontier
-        nextSq = self.popFrontier()
-        if not nextSq:
-            self.goHome(climb = True)
-        else:
-            self.goToSquare(nextSq)
-
 
     # This function constructs a path from the current square to (1,1)
     def goHome(self, climb):
@@ -223,7 +260,6 @@ class MyAI ( Agent ):
     # the agent in the right direction and moves the agent to the destination 
     # square
     def moveOneSq(self, dest):
-
         # do nothing
         if dest == self.currentSq:
             return
