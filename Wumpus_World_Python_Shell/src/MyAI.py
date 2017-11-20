@@ -36,6 +36,8 @@ class MyAI ( Agent ):
         
         # -------------------------  State Information ---------------------------
         self.wumpusDead = False
+        self.wumpusLocation = None
+        self.wumpusFoundFrom = None
         self.headingHome = False
         self.haveArrow = True
         self.currentSq = (1,1)
@@ -86,6 +88,7 @@ class MyAI ( Agent ):
         print('Explored: (beg. of turn: %s' % self.exploredSquares)
         print('Path History: (beg. of turn: %s' % self.pathHistory)
         print('Frontier (beg. of turn: %s' % self.exploreFrontier)
+        print('Wumpus at: %s found from: %s' % (self.wumpusLocation, self.wumpusFoundFrom) )
         # Moves in the moveBuffer have top priority
         if len(self.moveBuffer) != 0:
             return self.moveBuffer.pop(0)
@@ -101,9 +104,14 @@ class MyAI ( Agent ):
             # Append the square that wumpus was on to frontier
             self.addNeighborsToFrontier()
 
+        # if frontier is empty try killing wumpus
+        # if len(self.exploreFrontier) == 0 and self.wumpusLocation != None:
+        #     self.killWumpus()
+        #     print("KILLLLLLLLLINÑ")
+        #     return self.moveBuffer.pop()
+
 
         (curX, curY) = self.currentSq 
-
         if bump:
             # revert currentSq pointer to previous square
             self.currentSq = self.pathHistory[-1]
@@ -182,34 +190,41 @@ class MyAI ( Agent ):
             return        
 
         # Note: stench will be in dangers list only if wumpus is not dead
-        ### Naively shoot the arrow forward.
+        # Store wumpus location but do not kill until necessary
         if 'stench' in dangers:
-            if self.haveArrow:
+
+            # Find wumpus if not found already
+            if self.wumpusLocation == None:
                 wumpusSq = self.findWumpusSquare()
                 if wumpusSq:
-                    # Face Wumpus and Shoot
-                    self.faceSquare(wumpusSq)
-                    self.moveBuffer.append(Agent.Action.SHOOT)
-                    self.haveArrow = False
-                    return
+                    self.wumpusLocation = wumpusSq
+                    self.wumpusFoundFrom = self.currentSq
 
-                else:
-                    # cannot infer wumpus location
-                    # be conservative.
-                    nextSq = self.popFrontier()
-                    if not nextSq:
-
-                        ##### Can shoot arrow here! ####
-                        self.goHome(climb = True)
-                    else:
-                        self.goToSquare(nextSq)
-            else:
-                # No arrow left
+            # if wumpus location is still unknown, explore the next item in frontier
+            if self.wumpusLocation == None:
                 nextSq = self.popFrontier()
                 if not nextSq:
+                    # If there are no more moves in the frontier, just shoot the arrow
                     self.goHome(climb = True)
+                    return
                 else:
                     self.goToSquare(nextSq)
+           
+            # If wumpusLocation is known, decide whether to kill it.
+            # If there are other nodes in the frontier, explore those first
+            if self.wumpusLocation != None:
+                if len(self.exploreFrontier) != 0:
+                    # Explore other paths before killing wumpus
+                    nextSq = self.popFrontier()
+                    self.goToSquare(nextSq)
+                    return
+                else:
+                    # if self.haveArrow:
+                    #     self.killWumpus()
+                    # else:
+                    #     self.goHome(climb = True)
+                    self.goHome(climb = True)
+                    return
 
         if 'breeze' in dangers:
             nextSq = self.popFrontier()
@@ -218,6 +233,13 @@ class MyAI ( Agent ):
             else:
                 self.goToSquare(nextSq)
 
+    # Current Impl does not support this. I cannot go to an arbitrary square yet.
+    def killWumpus(self):
+        self.goToSquare(self.wumpusFoundFrom)
+        self.faceSquare(self.wumpusLocation)
+        self.moveBuffer.append(Agent.Action.SHOOT)
+        self.haveArrow = False
+    
     def faceSquare(self, dest):
         (curX, curY) = self.currentSq
         (destX, destY) = dest
@@ -336,7 +358,10 @@ class MyAI ( Agent ):
             prevNode = self.pathHistory.pop()
             self.moveOneSq(prevNode)
 
-        self.pathHistory.append(self.currentSq)
+
+        ## Causing Duplicates?
+        if self.currentSq not in self.pathHistory:
+            self.pathHistory.append(self.currentSq)
 
         # make the move to the destination
         self.moveOneSq(dest)
@@ -350,20 +375,27 @@ class MyAI ( Agent ):
         return (abs(destX - curX) + abs(destY - curY)) == 1
 
     def addNeighborsToFrontier(self):
-        (curX, curY) = self.currentSq
+        (x, y) = self.currentSq
 
+        up = (x, y + 1)
+        down = (x, y - 1)
+        left = (x - 1, y)
+        right = (x + 1, y)
         ### Modify - for now, only add the forward the left neighbors to frontier ###
-        if curY != self.yDim:
-            nextSq = (curX, curY + 1)
-            if nextSq not in self.exploredSquares and nextSq not in self.exploreFrontier:
-                self.exploreFrontier.append(nextSq)
-                print('Adding %s to frontier' % (nextSq, ))
-        if curX != self.xDim:
-            nextSq = (curX + 1, curY)
-            if nextSq not in self.exploredSquares and nextSq not in self.exploreFrontier:
-                self.exploreFrontier.append(nextSq)
-                print('Adding %s to frontier' % (nextSq, ))
-
+        if y != self.yDim:
+            if up not in self.exploredSquares and up not in self.exploreFrontier:
+                self.exploreFrontier.append(up)
+                print('Adding %s to frontier' % (up, ))
+            if down not in self.exploredSquares and down not in self.exploreFrontier:
+                self.exploreFrontier.append(down)
+                print('Adding %s to frontier' % (down, ))
+        if x != self.xDim:
+            if left not in self.exploredSquares and left not in self.exploreFrontier:
+                self.exploreFrontier.append(left)
+                print('Adding %s to frontier' % (left, ))
+            if right not in self.exploredSquares and right not in self.exploreFrontier:
+                self.exploreFrontier.append(right)
+                print('Adding %s to frontier' % (right, ))
         print('Frontier: %s\n' % self.exploreFrontier)
 
 
