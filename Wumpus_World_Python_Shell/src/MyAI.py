@@ -74,6 +74,7 @@ class MyAI ( Agent ):
 
         # Exploration Frontier (LIFO structure)
         self.exploreFrontier = []
+        # self.exploredFrontierPQ = queue.PriorityQueue()
 
         # Tracks the squares that have been visited (stores (x,y) tuples)
         self.exploredSquares = []
@@ -512,7 +513,8 @@ class MyAI ( Agent ):
             print('Frontier is empty')
             return None
 
-        nextSq = self.exploreFrontier.pop()
+
+        nextSq = self.minCostode()
         print('Popped %s from frontier\n' % (nextSq, ))
 
         if nextSq not in self.exploredSquares:
@@ -521,6 +523,25 @@ class MyAI ( Agent ):
 
         return nextSq
 
+    # find the node in the frontier wth the smallest manhattan distance
+    # from the current node.
+    # Assumptions: frontier is nonempty
+    def minCostode(self):
+        minCost = self.manhattanDist(self.currentSq, self.exploreFrontier[0])
+        minNode = 0
+        i = 1
+        while i < len(self.exploreFrontier):
+            t = self.manhattanDist(self.currentSq, self.exploreFrontier[i])
+            if t < minCost:
+                minCost = t
+                minNode = i
+            i = i + 1
+
+        return self.exploreFrontier.pop(minNode)
+
+
+    def manhattanDist(self, sq1, sq2):
+        return (abs(sq1[0] - sq2[0]) + abs(sq1[1] - sq1[1]))
 
     # Check that dest is adjacent to current square 
     def isAdjacent(self, dest):
