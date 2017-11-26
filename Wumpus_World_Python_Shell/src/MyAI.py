@@ -24,12 +24,12 @@
 # If a breeze or stench is perceived:
     # Head back to start node and climb 
 
-## IMPORTANT NOTES:
-# - for pathTo, store nodes explicity and then do one move at a time
-#   This allows for adjusting for bump while on a path (so you won't go out of bounds)
-# - pop Frontier according to nodes that are closest manhattan
-# Nodes are added to frontier multiple times.
-# 
+## IMPORTANT NOTES / To Dos:
+# To Do: Break ties when popping next frontier node by direction agent is facing
+# To Do: Once Wumpus location is deteremined, update the reachable/safe matrix
+# Also update the frontier - add the reachable nodes into frontier. Must first determine
+# if node is reachable.
+# To Do: Pit inference. *** This will improve score the most.
 
 from Agent import Agent
 import queue
@@ -40,7 +40,7 @@ class MyAI ( Agent ):
         # ======================================================================
         # YOUR CODE BEGINS
         # ======================================================================
-        
+    
         # -------------------------  State Information ---------------------------
         self.wumpusDead = False
         self.wumpusLocation = None
@@ -65,10 +65,8 @@ class MyAI ( Agent ):
         self.prevSq = None
 
         # Matricies are all 10 x 10 grid with entries initialized to False
-        # self.breezeMat = [[False for x in range(10)] for y in range(10)]
+        self.breezeMat = [['unknown' for x in range(12)] for y in range(12)]
         # self.stenchMat = [[False for x in range(10)] for y in range(10)]
-        # self.safeMat = [[False for x in range(10)] for y in range(10)]
-        self.breezeSq = []
         self.stenchSq = []
         self.safeSq = []
 
@@ -78,10 +76,13 @@ class MyAI ( Agent ):
 
         # Tracks the squares that have been visited (stores (x,y) tuples)
         self.exploredSquares = []
-        self.reachable = [ [False  for j in range(12)] for i in range(12)]
+        self.safeSquares = [ [False  for j in range(12)] for i in range(12)]
 
         ###  -------- Debugging --------- ###
+        self.pitsFound = []
         self.headingToSquare = ()
+        self.wumpusMode = False
+        self.pitMode = True
 
         # ======================================================================
         # YOUR CODE ENDS
@@ -93,10 +94,11 @@ class MyAI ( Agent ):
         # ======================================================================
         #print('Explored: (beg. of turn: %s' % self.exploredSquares)
         #print('Path History: (beg. of turn: %s' % self.pathHistory)
-        print('Frontier (beg. of turn: %s' % self.exploreFrontier)
+        print('Explore Frontier (beg. of turn: %s' % self.exploreFrontier)
         #print('Wumpus at: %s found from: %s' % (self.wumpusLocation, self.wumpusFoundFrom) )
         print("World Dim: %d x %d" % (self.xDim, self.yDim))
         # Moves in the moveBuffer have top priority
+        print('pits found: %s' % self.pitsFound)
         if len(self.moveBuffer) != 0:
             # If bump is perceived clear moveBuffer and go to next node in frontier.
             # This could occur, for instance, when a path is calculated but the dimensions
@@ -130,8 +132,8 @@ class MyAI ( Agent ):
                 print('xDim Found!: %d' % self.xDim)
 
                 # update which squares are reachable
-                for i in range(len(self.reachable)):
-                    self.reachable[self.xDim+1][i] = False
+                for i in range(len(self.safeSquares)):
+                    self.safeSquares[self.xDim+1][i] = False
 
                 # remove squares in frontier that have x > x dimension
                 i = 0
@@ -148,8 +150,8 @@ class MyAI ( Agent ):
                 print('yDim Found!: %d' % self.yDim)
 
                 # update which squares are reachable.
-                for j in range(len(self.reachable[0])):
-                    self.reachable[j][self.yDim+1] = False
+                for j in range(len(self.safeSquares[0])):
+                    self.safeSquares[j][self.yDim+1] = False
 
                 # remove squares in frontier that have y > y dimension
                 i = 0
@@ -165,6 +167,7 @@ class MyAI ( Agent ):
             return self.moveBuffer.pop(0)
 
         else:
+            # -------------- Stench or Breeze Perceived -------------
             dangers = []
             # If a stench or breeze is perceived, mark the squares.
             if stench and not self.wumpusDead:
@@ -174,21 +177,14 @@ class MyAI ( Agent ):
                 dangers.append('stench')
             
             if breeze:
-                #self.breezeMat[curX-1][curY-1] = True
-                if self.currentSq not in self.breezeSq:
-                    self.breezeSq.append(self.currentSq)
                 dangers.append('breeze')
 
             if len(dangers) != 0:
                 self.handleDanger(dangers)
                 return self.moveBuffer.pop(0)
             
-            # ------------- No Dangers Present -------------
-            self.reachable[curX][curY] = True
-
-            # Mark current square as explored and reachable
-            # if self.currentSq not in self.exploredSquares:
-            #     self.exploredSquares.append(self.currentSq)
+            # ----------------- No Dangers Perceived ---------------------
+            self.safeSquares[curX][curY] = True
 
             # append current square to pathHistory
             self.pathHistory.append(self.currentSq)
@@ -211,7 +207,111 @@ class MyAI ( Agent ):
     # ======================================================================
     # YOUR CODE BEGINS
     # ======================================================================
-    
+    # This function determines the actions to take when a stench and/or 
+    # breeze is perceive.
+    def handleDanger(self, dangers):
+        # Turn wumpus detection off
+        if 'stench' in dangers:
+            self.nextMove()
+            return
+
+        curX, curY = self.currentSq
+        if 'breeze' in dangers and self.pitMode:
+            # If a next breeze square is found, run algorithm to determine pit
+            # locations.
+            if self.breezeMat[curX][curY] != True:
+                self.breezeMat[curX][curY] = True
+                self.inferPitSquares()
+                self.nextMove()
+                return
+        else:
+            self.nextMove()
+  
+        # Note: stench will be in dangers list only if wumpus is not dead
+        # Store wumpus location but do not kill until necessary
+        # if 'stench' in dangers and self.wumpusMode:
+        #     # Try inferring wumpus square if not found already
+        #     if self.wumpusLocation == None:
+        #         wumpusSq = self.findWumpusSquare()
+        #         if wumpusSq:
+        #             self.wumpusLocation = wumpusSq
+        #             self.wumpusFoundFrom = self.currentSq
+
+        #     # if wumpus location is still unknown, explore the next item in frontier
+        #     self.nextMove()
+            ### Logic to Kill Wumpus. For now, ONLY avoid wumpus. Do NOT kill ###
+
+    # This function is called when the agent encounters a breeze. It is used to 
+    # determine (if possible) which of the current location's neighbors are pits.
+    def inferPitSquares(self):
+        # We want to check each of the neighbors of the currentSq to see if it is
+        # a pit. 
+        allNeighbors = self.getAllNeighbors(self.currentSq)
+        safeNeighbors = self.generateSafeNeighbors(self.currentSq)
+
+        # Do not process neighbors that are already known to be safe.
+        neighbors = list(set(allNeighbors) - set(safeNeighbors))
+
+        # Process each unsafe neighbor
+        for neighbor in neighbors:
+            x, y = neighbor
+            assert (x, y) not in self.exploredSquares
+
+            if self.isPit(neighbor):
+                print('pit found at: %s' % (neighbor, ))
+                self.pitsFound.append(neighbor)
+            elif self.isNotPit(neighbor):
+                print('Asserting that safeSqaure[x][y] is False')
+                assert self.safeSquares[x][y] == False
+                print('Assertion passed')
+                self.safeSquares[x][y] = True  ## To Impl: Note that this could propogate forward.
+
+                # We can safely add this square to the frontier
+                print('Asserting that (x,y) is not in frontier')
+                assert (x, y) not in self.exploreFrontier
+                print('Assertion passed')
+                self.exploreFrontier.append((x,y))
+                print("Added an square adj to breeze! --- %s" % ((x,y),))
+
+    # This function takes as input a square (unexplored) and determines if it IS a pit
+    # Assumptions: 
+    #   1) currentSq has a breeze
+    #   2) sq is a neighbor of currentSq   
+    def isPit(self, sq):
+        # Check: Can deduce if sq IS a pit if all but one neighbor is marked safe.
+        x, y = sq
+
+        print('Asserting that sq is not explored')
+        assert (x, y) not in self.exploredSquares
+        print('Assertion Passed')
+
+        allNeighbors = self.getAllNeighbors(self.currentSq)
+        for neighbor in allNeighbors:
+            print("inside loop isPit()")
+            if neighbor != sq:
+                nx, ny = neighbor
+                if not self.safeSquares[nx][ny]:
+                    return False
+        return True
+
+    # This function takes as input a square (unexplored) and determines if it is NOT a pit
+    def isNotPit(self, sq):
+        x, y = sq
+
+        print('Asserting that sq is not explored (isNotPit)')
+        assert (x, y) not in self.exploredSquares
+        print('Assertion Passed')
+
+        allNeighbors = self.getAllNeighbors(sq)
+
+        # Check1: all neighbors of sq are breezy
+        for (x,y) in allNeighbors:
+            if self.breezeMat[x][y] == False:
+                # one of the bordering squares is not breezy => not a pit.
+                return True
+        
+        return False
+
     # This function takes pops the next node from the frontier and moves the
     # agent to that node.
     def nextMove(self):
@@ -269,7 +369,7 @@ class MyAI ( Agent ):
         while len(Q) != 0 and not pathFound:
             u = Q.pop(0)
             print("u is: %s" % (u, ))
-            reachableNeighbors = self.generateReachableNeighbors(u)
+            reachableNeighbors = self.generateSafeNeighbors(u)
             print("reachable (safe) neighbors: %s" % reachableNeighbors)
             for v in reachableNeighbors:
                 if v not in parents:
@@ -307,28 +407,28 @@ class MyAI ( Agent ):
             if up not in self.exploredSquares and up not in self.exploreFrontier:
                 self.exploreFrontier.append(up)
                 print('Adding %s to frontier' % (up, ))
-            self.reachable[x][y+1] = True
+            self.safeSquares[x][y+1] = True
         if y > 1:    
             if down not in self.exploredSquares and down not in self.exploreFrontier:
                 self.exploreFrontier.append(down)
                 print('Adding %s to frontier' % (down, ))
-            self.reachable[x][y-1] = True
+            self.safeSquares[x][y-1] = True
         if x != self.xDim:
             if right not in self.exploredSquares and right not in self.exploreFrontier:
                 self.exploreFrontier.append(right)
                 print('Adding %s to frontier' % (right, ))
-            self.reachable[x+1][y] = True
+            self.safeSquares[x+1][y] = True
         if x > 1:
             if left not in self.exploredSquares and left not in self.exploreFrontier:
                 self.exploreFrontier.append(left)
                 print('Adding %s to frontier' % (left, ))
-            self.reachable[x-1][y] = True
+            self.safeSquares[x-1][y] = True
         print('Frontier: %s\n' % self.exploreFrontier)
 
       
     # This function takes a square and generates returns the list of squares
     # that border it and are reachable
-    def generateReachableNeighbors(self, sq):
+    def generateSafeNeighbors(self, sq):
         x, y = sq
         S = []
         up = (x, y + 1)
@@ -336,73 +436,25 @@ class MyAI ( Agent ):
         left = (x - 1, y)
         right = (x + 1, y)
 
-        if self.reachable[x][y+1]:
+        if self.safeSquares[x][y+1]:
             S.append(up)
-        if self.reachable[x][y-1]:
+        if self.safeSquares[x][y-1]:
             S.append(down)
-        if self.reachable[x-1][y]:
+        if self.safeSquares[x-1][y]:
             S.append(left)
-        if self.reachable[x+1][y]:
+        if self.safeSquares[x+1][y]:
             S.append(right)
 
         return S
 
+    def getAllNeighbors(self, sq):
+        x, y = sq
+        up = (x, y + 1)
+        down = (x, y - 1)
+        left = (x - 1, y)
+        right = (x + 1, y)
 
-    def handleDanger(self, dangers):
-        ## Implement EVALUATE DANGER ##
-
-        #### For now, do not handle both cases
-        if 'breeze' in dangers and 'stench' in dangers:
-            nextSq = self.popFrontier()
-            if not nextSq:
-                self.goHome(climb = True)
-            else:
-                self.goToSquare(nextSq)  
-            return        
-
-        # Note: stench will be in dangers list only if wumpus is not dead
-        # Store wumpus location but do not kill until necessary
-        if 'stench' in dangers:
-
-            # Find wumpus if not found already
-            if self.wumpusLocation == None:
-                wumpusSq = self.findWumpusSquare()
-                if wumpusSq:
-                    self.wumpusLocation = wumpusSq
-                    self.wumpusFoundFrom = self.currentSq
-
-            # if wumpus location is still unknown, explore the next item in frontier
-            if self.wumpusLocation == None:
-                nextSq = self.popFrontier()
-                if not nextSq:
-                    # If there are no more moves in the frontier, just shoot the arrow
-                    self.goHome(climb = True)
-                    return
-                else:
-                    self.goToSquare(nextSq)
-           
-            # If wumpusLocation is known, decide whether to kill it.
-            # If there are other nodes in the frontier, explore those first
-            if self.wumpusLocation != None:
-                if len(self.exploreFrontier) != 0:
-                    # Explore other paths before killing wumpus
-                    nextSq = self.popFrontier()
-                    self.goToSquare(nextSq)
-                    return
-                else:
-                    # if self.haveArrow:
-                    #     self.killWumpus()
-                    # else:
-                    #     self.goHome(climb = True)
-                    self.goHome(climb = True)
-                    return
-
-        if 'breeze' in dangers:
-            nextSq = self.popFrontier()
-            if not nextSq:
-                self.goHome(climb = True)
-            else:
-                self.goToSquare(nextSq)
+        return [up, down, left, right]
 
     # Current Impl does not support this. I cannot go to an arbitrary square yet.
     def killWumpus(self):
