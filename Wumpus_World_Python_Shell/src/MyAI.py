@@ -31,6 +31,8 @@
 # if node is reachable.
 # To Do: Pit inference. *** This will improve score the most.
 
+# Call inferPitSquares every time agent explores a new square!
+
 from Agent import Agent
 import queue
 
@@ -75,7 +77,7 @@ class MyAI ( Agent ):
         # self.exploredFrontierPQ = queue.PriorityQueue()
 
         # Tracks the squares that have been visited (stores (x,y) tuples)
-        self.exploredSquares = []
+        self.exploredSquares = [(1,1)]
         self.safeSquares = [ [False  for j in range(12)] for i in range(12)]
 
         ###  -------- Debugging --------- ###
@@ -565,7 +567,6 @@ class MyAI ( Agent ):
             print('Frontier is empty')
             return None
 
-
         nextSq = self.minCostode()
         print('Popped %s from frontier\n' % (nextSq, ))
 
@@ -576,14 +577,29 @@ class MyAI ( Agent ):
         return nextSq
 
     # find the node in the frontier wth the smallest manhattan distance
-    # from the current node.
+    # from the current node. Note: cost heuristic should take into account
+    # the direction agent is facing.
     # Assumptions: frontier is nonempty
+    # def minCostode(self):
+    #     minCost = self.manhattanDist(self.currentSq, self.exploreFrontier[0])
+    #     minNode = 0
+    #     i = 1
+    #     while i < len(self.exploreFrontier):
+    #         t = self.manhattanDist(self.currentSq, self.exploreFrontier[i])
+    #         if t < minCost:
+    #             minCost = t
+    #             minNode = i
+    #         i = i + 1
+
+    #     return self.exploreFrontier.pop(minNode)
+
     def minCostode(self):
-        minCost = self.manhattanDist(self.currentSq, self.exploreFrontier[0])
+        print('hi')
+        minCost = self.costHeuristic(self.exploreFrontier[0])
         minNode = 0
         i = 1
         while i < len(self.exploreFrontier):
-            t = self.manhattanDist(self.currentSq, self.exploreFrontier[i])
+            t = self.costHeuristic(self.exploreFrontier[i])
             if t < minCost:
                 minCost = t
                 minNode = i
@@ -591,9 +607,36 @@ class MyAI ( Agent ):
 
         return self.exploreFrontier.pop(minNode)
 
+    def costHeuristic(self, sq):
+        dx, dy = (sq[0] - self.currentSq[0], sq[1] - self.currentSq[1])
+        cost = 0
+        if dx < 0:
+            if self.facing == 'right':
+                cost += 2
+            elif self.facing == 'up' or self.facing == 'down':
+                cost += 1
+        if dx > 0:
+            if self.facing == 'left':
+                cost += 2
+            elif self.facing == 'up' or self.facing == 'down':
+                cost += 1 
+        if dy < 0:
+            if self.facing == 'up':
+                cost += 2
+            elif self.facing == 'left' or self.facing == 'right':
+                cost += 1
+        if dy > 0:
+            if self.facing == 'down':
+                cost += 2
+            elif self.facing == 'left' or self.facing == 'right':
+                cost += 1
 
+        cost += self.manhattanDist(self.currentSq, sq)
+        return cost
+
+    # This function calculates the manhattan distance between two squares.
     def manhattanDist(self, sq1, sq2):
-        return (abs(sq1[0] - sq2[0]) + abs(sq1[1] - sq1[1]))
+        return (abs(sq1[0] - sq2[0]) + abs(sq1[1] - sq2[1]))
 
     # Check that dest is adjacent to current square 
     def isAdjacent(self, dest):
