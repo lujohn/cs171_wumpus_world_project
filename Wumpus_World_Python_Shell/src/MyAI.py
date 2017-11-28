@@ -29,13 +29,24 @@
 # To Do: Once Wumpus location is deteremined, update the reachable/safe matrix
 # Also update the frontier - add the reachable nodes into frontier. Must first determine
 # if node is reachable.
-# To Do: Pit inference. *** This will improve score the most.
+
 
 # Call inferPitSquares every time agent explores a new square!
 
 # Shoot arrow if stench is in (1,1) and no breeze. Not much to lose.
 # Kill Wumpus if Wumpus found in first n moves.
 # Gamble with pits
+
+# One More PIT inference. 
+# Using both "no breeze" spots and known breeze spots. See bigWorld2.txt
+# Also look at bigWorld3.txt
+# KEEP PITS DETECTED VS BREEZES FOUND VS SAFE SQUARES SEPARATE!
+    # For each square visited...be sure to not only mark it as "safe" but also
+    # that it has no breeze!!!!!
+
+# Use your prob skills.
+
+# pit detection when user is on border needs fixing
 
 
 from Agent import Agent
@@ -73,6 +84,7 @@ class MyAI ( Agent ):
 
         # Matricies are all 10 x 10 grid with entries initialized to False
         self.breezeMat = [['unknown' for x in range(12)] for y in range(12)]
+        self.pitMat = [['unknown' for x in range(12)] for y in range(12)]
         # self.stenchMat = [[False for x in range(10)] for y in range(10)]
         self.stenchSq = []
         self.safeSq = []
@@ -90,7 +102,7 @@ class MyAI ( Agent ):
         self.headingToSquare = ()
 
         # WumpusMode decreases score by ~25
-        self.wumpusMode = False
+        self.wumpusMode = True
         self.pitMode = True
 
         self.prevAction = ''
@@ -131,7 +143,7 @@ class MyAI ( Agent ):
 
         # If there is a stench at the start square and no breeze, just shoot the arrow
         # (On Avg, decreasing score by 5 to 10 points)
-        if not breeze and stench and self.currentSq == (1,1) and self.haveArrow:
+        if stench and not breeze and self.currentSq == (1,1) and self.haveArrow:
             self.stenchSq.append((1,1))
             self.haveArrow = False
             self.prevAction = 'shoot'
@@ -203,9 +215,8 @@ class MyAI ( Agent ):
             self.nextMove()
 
             return self.moveBuffer.pop(0)
-
+        # -------------- Stench or Breeze Perceived -------------
         else:
-            # -------------- Stench or Breeze Perceived -------------
             dangers = []
             # If a stench or breeze is perceived, mark the squares.
             if stench and not self.wumpusDead:
@@ -216,6 +227,10 @@ class MyAI ( Agent ):
             
             if breeze:
                 dangers.append('breeze')
+                self.breezeMat[curX][curY] = True
+            else:
+                self.breezeMat[curX][curY] = False
+            print('breezeMat[%d][%d] has breeze: %s ' % (curX, curY, self.breezeMat[curX][curY]))
 
             if len(dangers) != 0:
                 self.handleDanger(dangers)
@@ -251,90 +266,108 @@ class MyAI ( Agent ):
 
         curX, curY = self.currentSq
         noDanger = []
-        if 'breeze' in dangers and self.pitMode:
+        # If both breeze and stench perceived...be careful
+        if 'breeze' in dangers and 'stench' in dangers:
+            noWumpusNeighbors = self.getNoWumpusNeighbors(self.currentSq)
+            if len(noWumpusNeighbors) != 0:
+                noPitNeighbors = self.getNoPitNeighbors(self.currentSq)
+                if len(noPitNeighbors) != 0:
+                    noDanger.extend(list(set(noPitNeighbors).intersection(set(noWumpusNeighbors))))
+                    print('Stench and Wumpus!...but these are safe! %s' % noDanger)
+
+        elif 'breeze' in dangers and self.pitMode:
             # If a next breeze square is found, run algorithm to determine pit
             # locations.
-            if self.breezeMat[curX][curY] != True:
-                self.breezeMat[curX][curY] = True
-                noDanger.extend(self.inferPitSquares())
-        elif 'breeze' in dangers:
-            self.nextMove()
-            return
+            noPitNeighbors = self.getNoPitNeighbors(self.currentSq)
+            noDanger.extend(noPitNeighbors)
 
-        print('noDanger (after processing breeze): %s' % noDanger)
+            print('noDanger (after processing breeze): %s' % noDanger)
 
-        if 'stench' in dangers and not self.wumpusDead and self.wumpusMode:
-            if self.wumpusLocation != None:
-                noDanger.extend(self.getAllNeighbors(self.currentSq, exclude = [self.wumpusLocation]))
-                # self.addNeighborsToFrontier(exclude = [self.wumpusLocation])
-            else:
-                self.wumpusLocation = self.findWumpusSquare()
-                if self.wumpusLocation != None:
-                    print('wumpus found!')
-                    self.wumpusFoundFrom = self.currentSq
-                    noDanger.extend(self.getAllNeighbors(self.currentSq, exclude = [self.wumpusLocation]))
-                    # self.addNeighborsToFrontier(exclude = [self.wumpusLocation])
-        elif 'stench' in dangers and not self.wumpusDead:
-            self.nextMove()
-            return
+        elif 'stench' in dangers and not self.wumpusDead and self.wumpusMode:
+            noWumpusNeighbors = self.getNoWumpusNeighbors(self.currentSq)
+            noDanger.extend(noWumpusNeighbors)
 
         print('noDanger (after processing breeze and wumpus): %s' % noDanger)
         dangerousNeighbors = list(set(self.getAllNeighbors(self.currentSq, exclude = noDanger)))
         print("dangerousNeighbors: %s" %  list(set(self.getAllNeighbors(self.currentSq, exclude = noDanger))))
-        self.addNeighborsToFrontier(exclude = list(set(self.getAllNeighbors(self.currentSq, exclude = noDanger))))
+        
+        self.addNeighborsToFrontier(exclude = dangerousNeighbors)
         self.nextMove()
         return
   
-        # Note: stench will be in dangers list only if wumpus is not dead
-        # Store wumpus location but do not kill until necessary
-        # if 'stench' in dangers and self.wumpusMode:
-        #     # Try inferring wumpus square if not found already
-        #     if self.wumpusLocation == None:
-        #         wumpusSq = self.findWumpusSquare()
-        #         if wumpusSq:
-        #             self.wumpusLocation = wumpusSq
-        #             self.wumpusFoundFrom = self.currentSq
+        ### Logic to Kill Wumpus. For now, ONLY avoid wumpus. Do NOT kill ###
 
-        #     # if wumpus location is still unknown, explore the next item in frontier
-        #     self.nextMove()
-            ### Logic to Kill Wumpus. For now, ONLY avoid wumpus. Do NOT kill ###
+    def getNoWumpusNeighbors(self, sq):
+        self.updateWumpusInformation()
 
-    # This function is called when the agent encounters a breeze. It is used to 
-    # determine (if possible) which of the current location's neighbors are pits.
-    def inferPitSquares(self):
-        # Tracks all neighbor squares that are inferred to NOT be a pit.
-        noPit = []
-        # We want to check each of the neighbors of the currentSq to see if it is
-        # a pit. 
-        allNeighbors = self.getAllNeighbors(self.currentSq)
-        safeNeighbors = self.generateSafeNeighbors(self.currentSq)
+        ret = []
+        if self.wumpusLocation != None:
+            allNeighbors = self.getAllNeighbors(sq)
+            for n in allNeighbors:
+                if n != self.wumpusLocation:
+                    ret.append(n)
+
+        return ret
+
+    def updateWumpusInformation(self):
+        # if wumpus location already known, don't do anything
+        if self.wumpusLocation != None:
+            return
+        else:
+            self.wumpusLocation = self.findWumpusSquare()
+
+    def getNoPitNeighbors(self, sq):
+        # For good measure, call updatePitInformation
+        self.updatePitInformation(sq)
+        ret = []
+
+        allNeighbors = self.getAllNeighbors(sq)
+        for n in allNeighbors:
+            x, y = n
+            if self.pitMat[x][y] == False:
+                ret.append(n)
+
+        print('These neighbors of %s have no pit: %s' % (ret, sq))
+        return ret
+
+
+    # Updates safety information related to pits. 'Sq' here is a sq that is
+    # newly discovered to be safe (either from exploring it or from inference)
+    def updatePitInformation(self, sq):
+        allNeighbors = self.getAllNeighbors(sq)
+        safeNeighbors = self.generateSafeNeighbors(sq)
 
         # Do not process neighbors that are already known to be safe.
-        neighbors = list(set(allNeighbors) - set(safeNeighbors))
+        unsafeNeighbors = list(set(allNeighbors) - set(safeNeighbors))
 
         # Process each unsafe neighbor
-        for neighbor in neighbors:
+        for neighbor in unsafeNeighbors:
             x, y = neighbor
-            assert (x, y) not in self.exploredSquares
-
             if self.isPit(neighbor):
                 print('pit found at: %s' % (neighbor, ))
+                self.pitMat[x][y] = True
+                self.safeSquares[x][y] = False
+
+                # Debugging
                 self.pitsFound.append(neighbor)
+
             elif self.isNotPit(neighbor):
-                print('Asserting that safeSqaure[x][y] is False')
-                assert self.safeSquares[x][y] == False
-                print('Assertion passed')
+                self.pitMat[x][y] = False
                 self.safeSquares[x][y] = True  ## To Impl: Note that this could propogate forward.
 
-                # We can safely add this square to the frontier
-                print('Asserting that (x,y) is not in frontier')
-                assert (x, y) not in self.exploreFrontier
-                print('Assertion passed')
-                #self.exploreFrontier.append((x,y))
-                noPit.append(neighbor)
                 print("Added an square adj to breeze! --- %s" % ((x,y),))
 
-        return noPit
+    # This function returns all neighbors of 'sq' that are not breezy. 'Unknown'
+    # neighbors are not returned.
+    def getNoBreezeNeighbors(self, sq):
+        allNeighbors = self.getAllNeighbors(sq)
+        ret = []
+
+        for n in allNeighbors:
+            if self.breezeMat[n[0]][n[1]] == False:
+                ret.append(n)
+
+        return ret
 
     # This function takes as input a square (unexplored) and determines if it IS a pit
     # Assumptions: 
@@ -350,7 +383,6 @@ class MyAI ( Agent ):
 
         allNeighbors = self.getAllNeighbors(self.currentSq)
         for neighbor in allNeighbors:
-            print("inside loop isPit()")
             if neighbor != sq:
                 nx, ny = neighbor
                 if not self.safeSquares[nx][ny]:
